@@ -1,0 +1,12 @@
+This is experiment at doing some not very quick (but hopefully decent)
+malloc that tries to minimize fragmentation.
+
+Approach taken is address ordered best-fit which appears to be best
+possible general purpose allocation strategy.
+
+Implementation is using rbtree from libbsd to find best-fit reasonably
+quickly.
+
+Note, this is not thread safe at all. Have your own locking if this is
+what you need. Given that, performance will likely suffer even more
+in multi-threaded environments, but we don't care that much.
