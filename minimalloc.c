@@ -32,12 +32,31 @@ struct free_span {
 static inline
 int mini_rb_cmp(struct free_span *a, struct free_span *b)
 {
-	if (a->size == b->size)
+	size_t asize = a->size & SPAN_SIZE_VALUE_MASK;
+	size_t bsize = b->size & SPAN_SIZE_VALUE_MASK;
+
+	if (asize == bsize) {
+		/* here it gets a bit subtle. perfect_fit "span" that we
+		 * use in malloc below has arbitrary address which we
+		 * don't want to involve at all. It has to be
+		 * semantically at NULL, so that span of perfect size
+		 * at lowest address is still greater than
+		 * perfect_fit */
+		/* We detect perfect_fit by lack of
+		 * SPAN_SIZE_FREE_MASK. And we know at most one of
+		 * <a,b> can be perfect_fit. And normally both are
+		 * not. */
+		if ((a->size ^ b->size) & SPAN_SIZE_FREE_MASK)
+			return a->size - b->size;
 		return (intptr_t)a - (intptr_t)b;
-	return (int)((ssize_t)(a->size) - (ssize_t)(b->size));
+	}
+	return (int)((ssize_t)(asize) - (ssize_t)(bsize));
 }
 
-/* looks like some bug in libbsd I have on my box */
+/* looks like some bug in libbsd I have on my box. It fixes compile
+ * error due it's attempt to declare static functions as unused, which
+ * is required to prevent compiler warning(s) in case some of
+ * functions are not used */
 #ifndef __unused
 #define __unused __attribute__((unused))
 #endif
@@ -63,8 +82,10 @@ static
 void insert_span(struct mini_state *st, void *at, size_t size)
 {
 	struct free_span *span = (struct free_span *)at;
+	size_t *after_span = (size_t *)((char *)at + size);
 	span->size = size | SPAN_SIZE_FREE_MASK;
-	((size_t *)(((char *)at) + size))[-1] |= SPAN_SIZE_PREV_FREE_MASK;
+	after_span[0] |= SPAN_SIZE_PREV_FREE_MASK;
+	after_span[-1] = size;
 	mini_rb_RB_INSERT(&st->head, span);
 }
 
@@ -75,14 +96,16 @@ struct mini_state *mini_init(mini_mallocer mallocer, mini_freer freer)
 		struct free_span first_span;
 	};
 	struct initial_stuff *first_chunk = mallocer(CHUNK_SIZE);
+	char *first_chunk_end;
 	if (!first_chunk)
 		return 0;
 	first_chunk->state.mallocer = mallocer;
 	first_chunk->state.freer = freer;
 	RB_INIT(&first_chunk->state.head);
 	first_chunk->state.next_chunk = 0;
+	first_chunk_end = (char *)first_chunk + CHUNK_SIZE - sizeof(size_t);
 	insert_span(&first_chunk->state, &first_chunk->first_span,
-		    CHUNK_SIZE - sizeof(size_t) - offsetof(struct initial_stuff, first_span));
+		    first_chunk_end - (char *)&first_chunk->first_span);
 	return &first_chunk->state;
 }
 
@@ -115,9 +138,9 @@ static void *mini_malloc_new_chunk(struct mini_state *st, size_t size)
 		struct free_span first_span;
 	};
 	struct next_stuff *next_chunk;
-	size_t chunk_overhead = sizeof(size_t) + sizeof(size_t)
+	size_t chunk_overhead = sizeof(size_t)
 		+ offsetof(struct next_stuff, first_span);
-	size_t alloc_size = max_size(CHUNK_SIZE, size + chunk_overhead);
+	size_t alloc_size = max_size(CHUNK_SIZE, compute_allocation_sz(size) + chunk_overhead);
 
 	next_chunk = st->mallocer(alloc_size);
 	if (!next_chunk)
@@ -150,16 +173,15 @@ void *do_malloc_with_fit(struct mini_state *st, size_t sz, struct free_span *fit
 
 	mini_rb_RB_REMOVE(&st->head, fit);
 
-	remaining_space = fit->size - sz;
+	remaining_space = (fit->size & SPAN_SIZE_VALUE_MASK) - sz;
 
 	assert(remaining_space >= 0);
 
 	if (remaining_space >= MIN_SPAN_SIZE) {
-		struct free_span *hole = (struct free_span *)((char *)fit + sz);
-		hole->size = remaining_space;
-		mini_rb_RB_INSERT(&st->head, hole);
+		char *hole = (char *)fit + sz;
+		insert_span(st, hole, remaining_space);
 	} else {
-		sz = fit->size;
+		sz = fit->size & SPAN_SIZE_VALUE_MASK;
 	}
 
 	hdr = (size_t *)fit;
@@ -183,12 +205,8 @@ void mini_free(struct mini_state *st, void *_ptr)
 
 static void do_mini_free(struct mini_state *st, void *_ptr)
 {
-	if (!_ptr) {
-		return;
-	}
-
-	size_t *hdr = (size_t *)_ptr;
-	size_t raw_sz = hdr[-1];
+	size_t *hdr = ((size_t *)_ptr) - 1;
+	size_t raw_sz = hdr[0];
 	size_t sz = raw_sz & SPAN_SIZE_VALUE_MASK;
 	size_t *next_span = (size_t *)((char *)hdr + sz);
 
@@ -199,14 +217,14 @@ static void do_mini_free(struct mini_state *st, void *_ptr)
 	}
 
 	if (raw_sz & SPAN_SIZE_PREV_FREE_MASK) {
-		size_t prev_size = hdr[-2];
+		size_t prev_size = hdr[-1];
 		struct free_span *prev_span = (struct free_span *)((char *)hdr - prev_size);
 		mini_rb_RB_REMOVE(&st->head, prev_span);
 		sz += prev_size;
-		_ptr = (void *)prev_span;
+		hdr = (size_t *)prev_span;
 	}
 
-	insert_span(st, _ptr, sz);
+	insert_span(st, hdr, sz);
 }
 
 void *mini_realloc(struct mini_state *st, void *p, size_t new_size)
@@ -223,4 +241,55 @@ void *mini_realloc(struct mini_state *st, void *p, size_t new_size)
 	memcpy(new_p, p, min_size((((size_t *)p)[-1] & SPAN_SIZE_VALUE_MASK) - sizeof(size_t), new_size));
 	mini_free(st, p);
 	return new_p;
+}
+
+void mini_get_stats(struct mini_state *st, struct mini_stats *stats, mini_span_cb cb, void *cb_data)
+{
+	unsigned chunks_count = 1;
+	void **chunk = st->next_chunk;
+	struct free_span *span;
+
+	while (chunk) {
+		chunks_count++;
+		chunk = (void **)*chunk;
+	}
+
+	stats->free_spans_count = 0;
+	stats->free_space = 0;
+	stats->os_chunks_count = chunks_count;
+
+	RB_FOREACH(span, mini_rb, &st->head) {
+		size_t size = span->size & SPAN_SIZE_VALUE_MASK;
+		stats->free_spans_count++;
+		stats->free_space = size;
+		if (cb) {
+			cb((void *)span, size, cb_data);
+		}
+	}
+}
+
+struct fill_mini_spans_st {
+	struct mini_spans *spans;
+	size_t idx;
+};
+
+static
+void mini_fill_mini_spans_cb(void *at, size_t size, void *_cbst)
+{
+	struct fill_mini_spans_st *cbst = (struct fill_mini_spans_st *)_cbst;
+	if (cbst->idx >= cbst->spans->spans_capacity)
+		return;
+	cbst->spans->spans[cbst->idx].at = at;
+	cbst->spans->spans[cbst->idx].size = size;
+	cbst->idx++;
+}
+
+int mini_fill_mini_spans(struct mini_state *st, struct mini_spans *spans)
+{
+	struct fill_mini_spans_st cbst = {.spans = spans,
+					  .idx = 0};
+	mini_get_stats(st, &spans->stats, mini_fill_mini_spans_cb, &cbst);
+	if (spans->stats.free_spans_count > spans->spans_capacity)
+		return -(int)(spans->stats.free_spans_count);
+	return (int)spans->stats.free_spans_count;
 }
