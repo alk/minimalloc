@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <bsd/sys/tree.h>
 #include <assert.h>
 
