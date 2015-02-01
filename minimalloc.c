@@ -62,8 +62,8 @@ int mini_rb_cmp(struct free_span *a, struct free_span *b)
 #define __unused __attribute__((unused))
 #endif
 
-RB_PROTOTYPE_STATIC(mini_rb, free_span, rb_link, mini_rb_cmp);
-RB_GENERATE_STATIC(mini_rb, free_span, rb_link, mini_rb_cmp);
+RB_PROTOTYPE_STATIC(mini_rb, free_span, rb_link, mini_rb_cmp)
+RB_GENERATE_STATIC(mini_rb, free_span, rb_link, mini_rb_cmp)
 
 #define CHUNK_SIZE (128*1024*1024)
 
