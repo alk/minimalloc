@@ -31,7 +31,7 @@ struct mini_spans {
 	struct {
 		void *at;
 		size_t size;
-	} spans[1];
+	} spans[];
 };
 
 extern int mini_fill_mini_spans(struct mini_state *st, struct mini_spans *spans);

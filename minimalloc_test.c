@@ -70,11 +70,8 @@ START_TEST(test_two_mallocs)
 	char *ptr1, *ptr2;
 	void *first_chunk_ptr;
 	size_t first_chunk_size;
-	struct {
-		struct mini_spans spans;
-		struct {void *p; size_t s;} extra_spans[256];
-	} spans_storage;
-	struct mini_spans *spans = &spans_storage.spans;
+	char spans_storage[sizeof(struct mini_spans) + (sizeof(void *) + sizeof(size_t)) * 256];
+	struct mini_spans *spans = (void *)spans_storage;
 	int rv;
 
 	spans->spans_capacity = 128;
@@ -118,11 +115,8 @@ START_TEST(test_two_mallocs_b)
 	char *ptr1, *ptr2, *ptr3;
 	void *first_chunk_ptr;
 	size_t first_chunk_size;
-	struct {
-		struct mini_spans spans;
-		struct {void *p; size_t s;} extra_spans[256];
-	} spans_storage;
-	struct mini_spans *spans = &spans_storage.spans;
+	char spans_storage[sizeof(struct mini_spans) + (sizeof(void *) + sizeof(size_t)) * 256];
+	struct mini_spans *spans = (void *)spans_storage;
 	int rv;
 
 	spans->spans_capacity = 128;
@@ -175,11 +169,8 @@ START_TEST(test_three_mallocs)
 	char *ptr1, *ptr2, *ptr3;
 	void *first_chunk_ptr;
 	size_t first_chunk_size;
-	struct {
-		struct mini_spans spans;
-		struct {void *p; size_t s;} extra_spans[256];
-	} spans_storage;
-	struct mini_spans *spans = &spans_storage.spans;
+	char spans_storage[sizeof(struct mini_spans) + (sizeof(void *) + sizeof(size_t)) * 256];
+	struct mini_spans *spans = (void *)spans_storage;
 	int rv;
 
 	spans->spans_capacity = 128;
