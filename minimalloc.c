@@ -221,6 +221,7 @@ static void do_mini_free(struct mini_state *st, void *_ptr)
 	if (raw_sz & SPAN_SIZE_PREV_FREE_MASK) {
 		size_t prev_size = hdr[-1];
 		struct free_span *prev_span = (struct free_span *)((char *)hdr - prev_size);
+		assert(prev_span->size == (prev_size | SPAN_SIZE_FREE_MASK));
 		mini_rb_RB_REMOVE(&st->head, prev_span);
 		sz += prev_size;
 		hdr = (size_t *)prev_span;
@@ -262,6 +263,7 @@ void mini_get_stats(struct mini_state *st, struct mini_stats *stats, mini_span_c
 
 	RB_FOREACH(span, mini_rb, &st->head) {
 		size_t size = span->size & SPAN_SIZE_VALUE_MASK;
+		assert(span->size == (size | SPAN_SIZE_FREE_MASK));
 		stats->free_spans_count++;
 		stats->free_space = size;
 		if (cb) {
