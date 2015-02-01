@@ -1,7 +1,7 @@
 
 CPPFLAGS ?=
 
-CFLAGS ?= -O0 -ggdb3
+CFLAGS ?= -O3 -ggdb3 -std=gnu99 -Wall -pedantic
 
 minimalloc_test: minimalloc_test.o minimalloc.o
 	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS)
@@ -15,5 +15,5 @@ minimalloc_test.o: CFLAGS += $(shell pkg-config --cflags check)
 clean:
 	rm -rf minimalloc_test minimalloc.o minimalloc_test.o
 
-test: minimalloc_test
+check test: minimalloc_test
 	./minimalloc_test
