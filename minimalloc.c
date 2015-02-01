@@ -105,6 +105,7 @@ struct mini_state *mini_init(mini_mallocer mallocer, mini_freer freer)
 	RB_INIT(&first_chunk->state.head);
 	first_chunk->state.next_chunk = 0;
 	first_chunk_end = (char *)first_chunk + CHUNK_SIZE - sizeof(size_t);
+	*(size_t*)first_chunk_end = 0;
 	insert_span(&first_chunk->state, &first_chunk->first_span,
 		    first_chunk_end - (char *)&first_chunk->first_span);
 	return &first_chunk->state;
